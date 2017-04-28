@@ -15,7 +15,7 @@ logger = logging.getLogger('mcts')
 
 class Node():
     def __init__(self, state, parent=None):
-        self.visits=1
+        self.visits=0
         self.reward=0.0 
         self.state=state
         self.noChildren=-1
@@ -43,15 +43,37 @@ class Node():
         return False
 
     def __repr__(self):
-        s="Node; children: %d; visits: %d; reward: %f"%(len(self.tried),self.visits,self.reward)
+        re=0
+        if self.visits:
+            re=float(self.reward)/self.visits
+        s="Node; move: %s; children: %d; visits: %d; reward: %f(%f)"%(self.state, len(self.tried),self.visits,self.reward, re)
         return s
         
 
+class MonteCarloRunner(object):
+    def __init__(self, monte):
+        self.monte=monte
 
+    def run(self, rootNode, maxMoves, maxIters):
+        node=rootNode
+        for l in range(maxMoves):
+            node=self.monte.search(maxIters/(l+1), node)
+            print("Move: %i, children: %i" % (l, node.noChildren))
+            for i,c in enumerate(node.tried):
+                logger.warning("%s %s" % (i,c))
+
+            print("Best Child: %s" % node.state)
+            if node.state.terminal():
+                print("End of game!")
+                return (True, node)
+        print("No winner")
+        return (False, node)
+            
 class MonteCarloSearch(object):
-    def __init__(self, banditStrategy, debugIter=100):
+    def __init__(self, banditStrategy, maxDepth=1000, debugIter=100):
         self.banditStrategy=banditStrategy
         self.debugIterations=debugIter
+        self.maxDepth=maxDepth
         #MCTS scalar.  Larger scalar will increase exploitation, smaller will increase exploration. 
         self.scalar=1/math.sqrt(2.0)
       
@@ -61,24 +83,24 @@ class MonteCarloSearch(object):
             if iter%self.debugIterations==(self.debugIterations-1):
                 logger.info("simulation: %d"%iter)
                 logger.info(root)
-            front=self.expandNodeUntilLeaf(root)
+            front=self.expandNodeUntilLeaf(root, self.maxDepth)
             self.updateNodes(front,front.state.reward())
         return self.banditStrategy(root,0)
 
-    def expandNodeUntilLeaf(self,node):
+    def expandNodeUntilLeaf(self,node, depth):
         """Iterate down the tree until the the leaf (fully expanded)"""
-        while node.state.terminal()==False:
+        while node.state.terminal()==False and depth>0:
             if node.fullyVisited()==False:    
                 node=node.getUnvisitedChild()
             else:
                 node=self.banditStrategy(node,self.scalar)
+            depth-=1
         return node
 
     def updateNodes(self, node,reward):
         """Update nodes from the leaf to the root"""
         while node!=None:
-            node.visits+=1
-            node.reward+=reward
+            node.update(reward)
             node=node.parent
         return
 
